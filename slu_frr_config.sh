@@ -28,12 +28,14 @@ sudo systemctl restart frr
 #|                     STEP 2: Configure NAT (Masquerade)                 |
 #--------------------------------------------------------------------------
 
+# Install iptables persistent so we can modify iptables config file
+sudo apt install iptables-persistent
+
 # Apply masquerade rule for internet-facing interface
 sudo iptables -t nat -A POSTROUTING -o ens4 -j MASQUERADE
 
-# Make it persistent across reboots via rc.local (only add if not already there)
-grep -q "MASQUERADE" /etc/rc.local 2>/dev/null || echo "iptables -t nat -A POSTROUTING -o ens4 -j MASQUERADE" | sudo tee -a /etc/rc.local
-sudo chmod +x /etc/rc.local
+# Save changes to config file
+sudo netfilter-persistent save
 
 #--------------------------------------------------------------------------
 #|                        STEP 3: Configure BGP + BFD                    |

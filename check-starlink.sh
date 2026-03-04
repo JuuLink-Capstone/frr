@@ -17,7 +17,7 @@ BREACH=0
 
 for TARGET in "${TARGETS[@]}"; do
     # 10 pings, 200ms apart
-    RESULT=$(fping -C 10 -q -p 200 "$TARGET" 2>&1 | tail -1)
+    RESULT=$(fping -C 10 -q -p 200 -I ens4 "$TARGET" 2>&1 | tail -1)
 
     # Count losses (marked as '-')
     LOST=$(echo "$RESULT" | tr ' ' '\n' | grep -c '^\-$')

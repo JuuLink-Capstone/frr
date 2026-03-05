@@ -1,47 +1,84 @@
 #!/bin/bash
 # slu_frr_config.sh
-# Master installation script for Starlink BGP failover
-# Usage: sudo ./slu_frr_config.sh [slu1|slu2]
+# Interactive Starlink BGP Failover Installer
+# Installs FRR, NAT, BGP/BFD, SLA monitoring, and Keepalived
 
 if [ "$EUID" -ne 0 ]; then
-    echo "Run as root: sudo ./slu_frr_config.sh [slu1|slu2]"
-    exit 1
-fi
-
-ROLE=${1:-slu1}
-
-if [ "$ROLE" = "slu1" ]; then
-    AS_NUMBER="1001"
-    RID="1.1.1.1"
-    REMOTE_AS="1002"
-    LAN_SUBNET="10.32.125.0/24"
-    PEER_BGP_IP="10.32.124.2"
-    BIND_IP="10.32.124.1"
-    PEER_IP="10.32.124.2"
-    KA_STATE="MASTER"
-    KA_PRIORITY="150"
-    SLU_Port_Interface="ens4"
-elif [ "$ROLE" = "slu2" ]; then
-    AS_NUMBER="1002"
-    RID="2.2.2.2"
-    REMOTE_AS="1001"
-    LAN_SUBNET="10.32.126.0/24"
-    PEER_BGP_IP="10.32.124.1"
-    BIND_IP="10.32.124.2"
-    PEER_IP="10.32.124.1"
-    KA_STATE="BACKUP"
-    KA_PRIORITY="100"
-    SLU_PORT_INTERFACE="ens4"
-else
-    echo "Usage: sudo ./slu_frr_config.sh [slu1|slu2]"
+    echo "Run as root: sudo ./slu_frr_config.sh"
     exit 1
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "========================================="
-echo " FRR Install for $ROLE"
+echo " Starlink BGP Failover Configuration"
 echo "========================================="
+echo ""
+
+#--------------------------------------------------------------------------
+#|                     Configuration Prompts                               |
+#--------------------------------------------------------------------------
+
+# Role
+read -p "Is this router the PRIMARY (master) or BACKUP? [primary/backup]: " ROLE_INPUT
+if [ "$ROLE_INPUT" = "primary" ]; then
+    KA_STATE="MASTER"
+    KA_PRIORITY="150"
+elif [ "$ROLE_INPUT" = "backup" ]; then
+    KA_STATE="BACKUP"
+    KA_PRIORITY="100"
+else
+    echo "Invalid role. Use 'primary' or 'backup'."
+    exit 1
+fi
+
+# BGP
+read -p "Local AS number (e.g. 1001): " AS_NUMBER
+read -p "Router ID (e.g. 1.1.1.1): " RID
+read -p "Remote peer AS number (e.g. 1002): " REMOTE_AS
+read -p "LAN subnet to advertise (e.g. 10.32.125.0/24): " LAN_SUBNET
+
+# Interfaces
+read -p "Starlink interface (e.g. ens4): " STARLINK_INTERFACE
+read -p "Direct port interface to peer router (e.g. ens5): " DIRECT_LINK_INTERFACE
+
+# IPs on the direct link
+read -p "This router's IP on direct link (e.g. 10.32.124.1): " BIND_IP
+read -p "Peer router's IP on direct link (e.g. 10.32.124.2): " PEER_IP
+PEER_BGP_IP="$PEER_IP"
+
+# SLA Thresholds
+read -p "Packet loss threshold % (default 5): " LOSS_INPUT
+LOSS_THRESHOLD=${LOSS_INPUT:-5}
+read -p "Latency threshold ms (default 150): " LATENCY_INPUT
+LATENCY_THRESHOLD=${LATENCY_INPUT:-150}
+read -p "Jitter threshold ms (default 50): " JITTER_INPUT
+JITTER_THRESHOLD=${JITTER_INPUT:-50}
+
+# Confirm
+echo ""
+echo "========================================="
+echo " Configuration Summary"
+echo "========================================="
+echo " Role:              $KA_STATE (priority $KA_PRIORITY)"
+echo " Local AS:          $AS_NUMBER"
+echo " Router ID:         $RID"
+echo " Remote AS:         $REMOTE_AS"
+echo " LAN Subnet:        $LAN_SUBNET"
+echo " Starlink Iface:    $STARLINK_INTERFACE"
+echo " Direct Link Iface: $DIRECT_LINK_INTERFACE"
+echo " This Router IP:    $BIND_IP"
+echo " Peer Router IP:    $PEER_IP"
+echo " Loss Threshold:    ${LOSS_THRESHOLD}%"
+echo " Latency Threshold: ${LATENCY_THRESHOLD}ms"
+echo " Jitter Threshold:  ${JITTER_THRESHOLD}ms"
+echo "========================================="
+echo ""
+read -p "Proceed with installation? [y/n]: " CONFIRM
+if [ "$CONFIRM" != "y" ]; then
+    echo "Aborted."
+    exit 0
+fi
 
 #------------------------------------------------------------------------
 #|                        STEP 1: Install FRR                           |
@@ -56,9 +93,11 @@ curl -s https://deb.frrouting.org/frr/keys.gpg | tee /usr/share/keyrings/frrouti
 echo "deb [signed-by=/usr/share/keyrings/frrouting.gpg] https://deb.frrouting.org/frr $(lsb_release -sc) frr-stable" | tee /etc/apt/sources.list.d/frr.list
 apt update && apt install frr frr-pythontools -y
 
+# Enable BGP and BFD daemons
 sed -i 's/bgpd=no/bgpd=yes/' /etc/frr/daemons
 sed -i 's/bfdd=no/bfdd=yes/' /etc/frr/daemons
 
+# Enable IPv4 forwarding
 sed -i 's/^#\s*net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' /etc/sysctl.conf
 sysctl -p
 
@@ -70,20 +109,20 @@ echo "FRR installed and running."
 #|                  STEP 2: Configure NAT (Masquerade)                    |
 #--------------------------------------------------------------------------
 echo ""
-echo "[2/5] Configuring NAT..."
+echo "[2/5] Configuring NAT on $STARLINK_INTERFACE..."
 
 DEBIAN_FRONTEND=noninteractive apt install iptables-persistent -y
 
-iptables -t nat -A POSTROUTING -o ens4 -j MASQUERADE
+iptables -t nat -A POSTROUTING -o "$STARLINK_INTERFACE" -j MASQUERADE
 netfilter-persistent save
 
-echo "NAT masquerade configured on ens4."
+echo "NAT masquerade configured on $STARLINK_INTERFACE."
 
 #--------------------------------------------------------------------------
 #|                     STEP 3: Configure BGP + BFD                        |
 #--------------------------------------------------------------------------
 echo ""
-echo "[3/5] Configuring BGP + BFD as $ROLE (AS $AS_NUMBER)..."
+echo "[3/5] Configuring BGP + BFD (AS $AS_NUMBER, RID $RID)..."
 
 vtysh << EOF
 configure terminal
@@ -97,14 +136,14 @@ exit
 router bgp $AS_NUMBER
   bgp router-id $RID
   no bgp network import-check
-  neighbor ens5 interface remote-as $REMOTE_AS
+  neighbor $DIRECT_LINK_INTERFACE interface remote-as $REMOTE_AS
   address-family ipv4 unicast
     network $LAN_SUBNET
     redistribute kernel
-    neighbor ens5 next-hop-self
-    neighbor ens5 route-map ALLOW in
-    neighbor ens5 route-map ALLOW out
-    neighbor ens5 bfd
+    neighbor $DIRECT_LINK_INTERFACE next-hop-self
+    neighbor $DIRECT_LINK_INTERFACE route-map ALLOW in
+    neighbor $DIRECT_LINK_INTERFACE route-map ALLOW out
+    neighbor $DIRECT_LINK_INTERFACE bfd
   exit-address-family
 end
 write memory
@@ -128,8 +167,11 @@ cp "$SCRIPT_DIR/route-decision-loop.sh" /usr/local/bin/
 sed -i "s/BIND_IP=\".*\"/BIND_IP=\"$BIND_IP\"/" /usr/local/bin/score-server.sh
 sed -i "s/PEER_IP=\".*\"/PEER_IP=\"$PEER_IP\"/" /usr/local/bin/failover.sh
 
-# Set correct ports for scripts
-sed -i "s/-I ens4/-I $SLU_PORT_INTERFACE/" /usr/local/bin/check-starlink.sh
+# Set correct interface and thresholds for health check
+sed -i "s/-I ens4/-I $STARLINK_INTERFACE/" /usr/local/bin/check-starlink.sh
+sed -i "s/LOSS_THRESHOLD=.*/LOSS_THRESHOLD=$LOSS_THRESHOLD/" /usr/local/bin/check-starlink.sh
+sed -i "s/LATENCY_THRESHOLD=.*/LATENCY_THRESHOLD=$LATENCY_THRESHOLD/" /usr/local/bin/check-starlink.sh
+sed -i "s/JITTER_THRESHOLD=.*/JITTER_THRESHOLD=$JITTER_THRESHOLD/" /usr/local/bin/check-starlink.sh
 
 # Make executable
 chmod +x /usr/local/bin/check-starlink.sh
@@ -196,7 +238,7 @@ vrrp_script check_starlink {
 
 vrrp_instance STARLINK_FAILOVER {
     state $KA_STATE
-    interface ens5
+    interface $DIRECT_LINK_INTERFACE
     virtual_router_id 51
     priority $KA_PRIORITY
     advert_int 1
@@ -225,8 +267,15 @@ echo "Keepalived installed ($KA_STATE, priority $KA_PRIORITY)."
 #--------------------------------------------------------------------------
 echo ""
 echo "========================================="
-echo " Installation complete: $ROLE"
+echo " Installation Complete"
 echo "========================================="
+echo ""
+echo " Role:       $KA_STATE (priority $KA_PRIORITY)"
+echo " BGP AS:     $AS_NUMBER (RID: $RID)"
+echo " Peer AS:    $REMOTE_AS (IP: $PEER_IP)"
+echo " Starlink:   $STARLINK_INTERFACE"
+echo " Direct:     $DIRECT_LINK_INTERFACE"
+echo " SLA:        Loss>${LOSS_THRESHOLD}% RTT>${LATENCY_THRESHOLD}ms Jitter>${JITTER_THRESHOLD}ms"
 echo ""
 echo " FRR:        $(systemctl is-active frr)"
 echo " Keepalived: $(systemctl is-active keepalived)"
@@ -237,14 +286,3 @@ echo " Verify BGP: sudo vtysh -c 'show ip bgp summary'"
 echo " Check logs: journalctl -t starlink-check -f"
 echo "             journalctl -t failover -f"
 echo "========================================="
-```
-
-Now your repo just needs:
-```
-FRR/
-├── slu_frr_config.sh          # Run this — does everything
-├── check-starlink.sh          # Copied to /usr/local/bin/ by the script
-├── score-server.sh            # Copied to /usr/local/bin/ by the script
-├── failover.sh                # Copied to /usr/local/bin/ by the script
-├── route-decision-loop.sh     # Copied to /usr/local/bin/ by the script
-└── README.md

@@ -4,8 +4,8 @@
 # Installs FRR, NAT, BGP/BFD, SLA monitoring, and Keepalived
 
 if [ "$EUID" -ne 0 ]; then
-    echo "Run as root: sudo ./slu_frr_config.sh"
-    exit 1
+    echo "Escalating privileges with sudo..."
+    exec sudo bash "$0" "$@"
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -86,6 +86,7 @@ fi
 echo ""
 echo "[1/5] Installing FRR..."
 
+sudo apt update
 sudo apt install curl fping bc -y
 
 curl -s https://deb.frrouting.org/frr/keys.gpg | tee /usr/share/keyrings/frrouting.gpg > /dev/null

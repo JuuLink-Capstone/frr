@@ -86,8 +86,8 @@ fi
 echo ""
 echo "[1/5] Installing FRR..."
 
-sudo apt update
-sudo apt install curl fping bc -y
+apt update
+apt install curl fping bc -y
 
 curl -s https://deb.frrouting.org/frr/keys.gpg | tee /usr/share/keyrings/frrouting.gpg > /dev/null
 

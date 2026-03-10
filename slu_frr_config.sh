@@ -125,6 +125,15 @@ echo "NAT masquerade configured on $STARLINK_INTERFACE."
 echo ""
 echo "[3/5] Configuring BGP + BFD (AS $AS_NUMBER, RID $RID)..."
 
+systemctl stop frr
+
+# Remove any existing capability link-local lines (both positive and negative)
+sed -i '/capability link-local/d' /etc/frr/frr.conf
+
+# Add the correct line after "neighbor ens5 bfd"
+sed -i '/neighbor ens5 bfd/a \ neighbor ens5 capability link-local' /etc/frr/frr.conf
+systemctl start frr
+
 vtysh << EOF
 configure terminal
 route-map ALLOW permit 10

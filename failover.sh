@@ -14,7 +14,27 @@ LOG_TAG="failover"
 # Hysteresis settings
 FAILOVER_THRESHOLD=3    # consecutive cycles before failing over
 RECOVERY_THRESHOLD=5    # consecutive cycles before recovering
-HOLD_TIMER=300          # seconds to hold after failover before allowing revert
+HOLD_TIMER=120          # seconds to hold after failover before allowing revert
+
+# Initialize local-preference on first run
+if [ ! -f "$STATE_FILE" ]; then
+    ROLE=$(cat "/etc/frr/router_role" 2>/dev/null || echo "backup")
+    if [ "$ROLE" = "primary" ]; then
+        logger -t "$LOG_TAG" "Initializing as PRIMARY — setting local-preference 200"
+        vtysh -c "conf t" \
+              -c "route-map ALLOW permit 10" \
+              -c "set local-preference 200" \
+              -c "end" -c "write memory"
+    else
+        logger -t "$LOG_TAG" "Initializing as BACKUP — setting local-preference 100"
+        vtysh -c "conf t" \
+              -c "route-map ALLOW permit 10" \
+              -c "set local-preference 100" \
+              -c "end" -c "write memory"
+    fi
+    echo "local" > "$STATE_FILE"
+    echo "0" > "$COUNTER_FILE"
+fi
 
 MY_SCORE=$(cat "$SCORE_FILE" 2>/dev/null || echo "9999")
 PEER_SCORE=$(curl -s --connect-timeout 3 "http://${PEER_IP}:${PEER_PORT}" || echo "9999")
@@ -69,10 +89,16 @@ fi
 
 # Threshold met — execute state change
 if [ "$BEST" = "local" ]; then
-    logger -t "$LOG_TAG" "LOCAL is better ($MY_SCORE vs $PEER_SCORE) — taking MASTER"
+    ROLE=$(cat "/etc/frr/router_role" 2>/dev/null || echo "backup")
+    if [ "$ROLE" = "primary" ]; then
+        RECOVER_LOCPREF=200
+    else
+        RECOVER_LOCPREF=100
+    fi
+    logger -t "$LOG_TAG" "LOCAL is better ($MY_SCORE vs $PEER_SCORE) — taking MASTER (local-pref $RECOVER_LOCPREF)"
     vtysh -c "conf t" \
           -c "route-map ALLOW permit 10" \
-          -c "set local-preference 200" \
+          -c "set local-preference $RECOVER_LOCPREF" \
           -c "end" -c "write memory"
 else
     logger -t "$LOG_TAG" "PEER is better ($MY_SCORE vs $PEER_SCORE) — becoming BACKUP"

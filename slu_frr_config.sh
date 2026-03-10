@@ -125,18 +125,19 @@ echo "NAT masquerade configured on $STARLINK_INTERFACE."
 echo ""
 echo "[3/5] Configuring BGP + BFD (AS $AS_NUMBER, RID $RID)..."
 
-systemctl stop frr
+# After role is determined, set initial local preference
+if [ "$ROLE_INPUT" = "primary" ]; then
+    INITIAL_LOCPREF=200
+else
+    INITIAL_LOCPREF=100
+fi
 
-# Remove any existing capability link-local lines (both positive and negative)
-sed -i '/capability link-local/d' /etc/frr/frr.conf
-
-# Add the correct line after "neighbor ens5 bfd"
-sed -i '/neighbor ens5 bfd/a \ neighbor ens5 capability link-local' /etc/frr/frr.conf
-systemctl start frr
+echo "$ROLE_INPUT" > /etc/frr/router_role
 
 vtysh << EOF
 configure terminal
 route-map ALLOW permit 10
+    set local-preference $INITIAL_LOCPREF
 exit
 bfd
   peer $PEER_BGP_IP
@@ -158,6 +159,12 @@ router bgp $AS_NUMBER
 end
 write memory
 EOF
+
+# Fix capability link-local AFTER vtysh writes config
+systemctl stop frr
+sed -i '/capability link-local/d' /etc/frr/frr.conf
+sed -i "/neighbor $DIRECT_LINK_INTERFACE bfd/a \ neighbor $DIRECT_LINK_INTERFACE capability link-local" /etc/frr/frr.conf
+systemctl start frr
 
 echo "BGP + BFD configured."
 

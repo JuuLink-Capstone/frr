@@ -85,3 +85,51 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+ExecStart=/usr/local/bin/route-decision-loop.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now wan-failover
+
+# Step 4: Configure Keepalived
+echo "[4/4] Configuring Keepalived..."
+cat > /etc/keepalived/keepalived.conf << EOF
+vrrp_script check_primary {
+    script "/usr/local/bin/check-starlink.sh $PRIMARY_IFACE /tmp/starlink1_score"
+    interval 5
+    fall 3
+    rise 5
+}
+
+vrrp_script check_backup {
+    script "/usr/local/bin/check-starlink.sh $BACKUP_IFACE /tmp/starlink2_score"
+    interval 5
+    fall 3
+    rise 5
+}
+EOF
+
+systemctl enable keepalived
+systemctl restart keepalived
+
+echo "========================================="
+echo " Installation Complete"
+echo "========================================="
+echo " Primary WAN:  $PRIMARY_IFACE"
+echo " Backup WAN:   $BACKUP_IFACE"
+echo " LAN:          $LAN_IFACE"
+echo ""
+echo " Services:"
+echo " WAN Failover: $(systemctl is-active wan-failover)"
+echo " Keepalived:   $(systemctl is-active keepalived)"
+echo ""
+echo " Check logs:"
+echo " journalctl -t failover -f"
+echo " journalctl -t starlink-check-$PRIMARY_IFACE -f"
+echo " journalctl -t starlink-check-$BACKUP_IFACE -f"
+echo "========================================="

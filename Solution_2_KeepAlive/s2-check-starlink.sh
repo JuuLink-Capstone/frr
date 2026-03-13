@@ -1,6 +1,6 @@
 #!/bin/bash
-# /usr/local/bin/check-starlink.sh
-# Usage: check-starlink.sh <interface> <score_file>
+# /usr/local/bin/s2-check-starlink.sh
+# Usage: s2-check-starlink.sh <interface> <score_file>
 
 IFACE=$1
 SCORE_FILE=$2

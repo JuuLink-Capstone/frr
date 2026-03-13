@@ -1,8 +1,8 @@
 #!/bin/bash
-# /usr/local/bin/failover.sh
+# /usr/local/bin/s2-failover.sh
 
-PRIMARY_IFACE="ens4"
-BACKUP_IFACE="ens5"
+PRIMARY_IFACE="ens3"
+BACKUP_IFACE="ens4"
 SCORE1_FILE="/tmp/starlink1_score"
 SCORE2_FILE="/tmp/starlink2_score"
 STATE_FILE="/tmp/failover_state"

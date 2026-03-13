@@ -68,16 +68,12 @@ sed -i "s/LOSS_THRESHOLD=5/LOSS_THRESHOLD=$LOSS_THRESHOLD/" /usr/local/bin/s2-ch
 sed -i "s/LATENCY_THRESHOLD=150/LATENCY_THRESHOLD=$LATENCY_THRESHOLD/" /usr/local/bin/s2-check-starlink.sh
 sed -i "s/JITTER_THRESHOLD=30/JITTER_THRESHOLD=$JITTER_THRESHOLD/" /usr/local/bin/s2-check-starlink.sh
 
-# Set interfaces in s2-route-decision-loop.sh
-sed -i "s/ens4/$PRIMARY_IFACE/g" /usr/local/bin/s2-route-decision-loop.sh
-sed -i "s/ens5/$BACKUP_IFACE/g" /usr/local/bin/s2-route-decision-loop.sh
-
 chmod +x /usr/local/bin/s2-check-starlink.sh
 chmod +x /usr/local/bin/s2-failover.sh
 chmod +x /usr/local/bin/s2-route-decision-loop.sh
 
 # Create systemd service
-cat > /etc/systemd/system/wan-failover.service << 'EOF'
+cat > /etc/systemd/system/wan-failover.service << EOF
 [Unit]
 Description=Dual-WAN Failover Decision Loop
 After=network-online.target
@@ -85,7 +81,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/s2-route-decision-loop.sh
+ExecStart=/usr/local/bin/s2-route-decision-loop.sh $PRIMARY_IFACE $BACKUP_IFACE
 Restart=always
 RestartSec=5
 

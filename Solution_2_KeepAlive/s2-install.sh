@@ -41,7 +41,7 @@ if [ "$CONFIRM" != "y" ]; then exit 0; fi
 echo "[1/4] Installing packages..."
 apt update
 apt install -y fping bc iptables-persistent keepalived
-ubuntu-24.04.3-desktop-amd64.iso
+
 # Enable IP forwarding
 sed -i 's/^#\s*net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' /etc/sysctl.conf
 sysctl -p
@@ -59,16 +59,16 @@ cp "$SCRIPT_DIR/s2-check-starlink.sh" /usr/local/bin/
 cp "$SCRIPT_DIR/s2-failover.sh" /usr/local/bin/
 cp "$SCRIPT_DIR/s2-route-decision-loop.sh" /usr/local/bin/
 
-# Set interfaces in failover.sh
+# Set interfaces in s2-failover.sh
 sed -i "s/PRIMARY_IFACE=\"ens4\"/PRIMARY_IFACE=\"$PRIMARY_IFACE\"/" /usr/local/bin/s2-failover.sh
 sed -i "s/BACKUP_IFACE=\"ens5\"/BACKUP_IFACE=\"$BACKUP_IFACE\"/" /usr/local/bin/s2-failover.sh
 
-# Set thresholds in check-starlink.sh
+# Set thresholds in s2-check-starlink.sh
 sed -i "s/LOSS_THRESHOLD=5/LOSS_THRESHOLD=$LOSS_THRESHOLD/" /usr/local/bin/s2-check-starlink.sh
 sed -i "s/LATENCY_THRESHOLD=150/LATENCY_THRESHOLD=$LATENCY_THRESHOLD/" /usr/local/bin/s2-check-starlink.sh
 sed -i "s/JITTER_THRESHOLD=30/JITTER_THRESHOLD=$JITTER_THRESHOLD/" /usr/local/bin/s2-check-starlink.sh
 
-# Set interfaces in route-decision-loop.sh
+# Set interfaces in s2-route-decision-loop.sh
 sed -i "s/ens4/$PRIMARY_IFACE/g" /usr/local/bin/s2-route-decision-loop.sh
 sed -i "s/ens5/$BACKUP_IFACE/g" /usr/local/bin/s2-route-decision-loop.sh
 
@@ -85,7 +85,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/route-decision-loop.sh
+ExecStart=/usr/local/bin/s2-route-decision-loop.sh
 Restart=always
 RestartSec=5
 
@@ -100,14 +100,14 @@ systemctl enable --now wan-failover
 echo "[4/4] Configuring Keepalived..."
 cat > /etc/keepalived/keepalived.conf << EOF
 vrrp_script check_primary {
-    script "/usr/local/bin/check-starlink.sh $PRIMARY_IFACE /tmp/starlink1_score"
+    script "/usr/local/bin/s2-check-starlink.sh $PRIMARY_IFACE /tmp/starlink1_score"
     interval 5
     fall 3
     rise 5
 }
 
 vrrp_script check_backup {
-    script "/usr/local/bin/check-starlink.sh $BACKUP_IFACE /tmp/starlink2_score"
+    script "/usr/local/bin/s2-check-starlink.sh $BACKUP_IFACE /tmp/starlink2_score"
     interval 5
     fall 3
     rise 5
@@ -122,7 +122,6 @@ echo " Installation Complete"
 echo "========================================="
 echo " Primary WAN:  $PRIMARY_IFACE"
 echo " Backup WAN:   $BACKUP_IFACE"
-echo " LAN:          $LAN_IFACE"
 echo ""
 echo " Services:"
 echo " WAN Failover: $(systemctl is-active wan-failover)"

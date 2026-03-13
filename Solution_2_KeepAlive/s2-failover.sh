@@ -10,9 +10,9 @@ COUNTER_FILE="/tmp/failover_counter"
 HOLD_FILE="/tmp/failover_hold"
 LOG_TAG="failover"
 
-FAILOVER_THRESHOLD=3
-RECOVERY_THRESHOLD=5
-HOLD_TIMER=120
+FAILOVER_THRESHOLD=2
+RECOVERY_THRESHOLD=3
+HOLD_TIMER=60
 
 # Get gateway IPs dynamically
 PRIMARY_GW=$(ip route show dev $PRIMARY_IFACE proto dhcp | awk '/default/ {print $3}')

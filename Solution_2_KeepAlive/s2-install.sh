@@ -41,7 +41,7 @@ if [ "$CONFIRM" != "y" ]; then exit 0; fi
 echo "[1/4] Installing packages..."
 apt update
 apt install -y fping bc iptables-persistent keepalived
-
+ubuntu-24.04.3-desktop-amd64.iso
 # Enable IP forwarding
 sed -i 's/^#\s*net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' /etc/sysctl.conf
 sysctl -p
@@ -55,26 +55,26 @@ netfilter-persistent save
 
 # Step 3: Install scripts
 echo "[3/4] Installing scripts..."
-cp "$SCRIPT_DIR/check-starlink.sh" /usr/local/bin/
-cp "$SCRIPT_DIR/failover.sh" /usr/local/bin/
-cp "$SCRIPT_DIR/route-decision-loop.sh" /usr/local/bin/
+cp "$SCRIPT_DIR/s2-check-starlink.sh" /usr/local/bin/
+cp "$SCRIPT_DIR/s2-failover.sh" /usr/local/bin/
+cp "$SCRIPT_DIR/s2-route-decision-loop.sh" /usr/local/bin/
 
 # Set interfaces in failover.sh
-sed -i "s/PRIMARY_IFACE=\"ens4\"/PRIMARY_IFACE=\"$PRIMARY_IFACE\"/" /usr/local/bin/failover.sh
-sed -i "s/BACKUP_IFACE=\"ens5\"/BACKUP_IFACE=\"$BACKUP_IFACE\"/" /usr/local/bin/failover.sh
+sed -i "s/PRIMARY_IFACE=\"ens4\"/PRIMARY_IFACE=\"$PRIMARY_IFACE\"/" /usr/local/bin/s2-failover.sh
+sed -i "s/BACKUP_IFACE=\"ens5\"/BACKUP_IFACE=\"$BACKUP_IFACE\"/" /usr/local/bin/s2-failover.sh
 
 # Set thresholds in check-starlink.sh
-sed -i "s/LOSS_THRESHOLD=5/LOSS_THRESHOLD=$LOSS_THRESHOLD/" /usr/local/bin/check-starlink.sh
-sed -i "s/LATENCY_THRESHOLD=150/LATENCY_THRESHOLD=$LATENCY_THRESHOLD/" /usr/local/bin/check-starlink.sh
-sed -i "s/JITTER_THRESHOLD=30/JITTER_THRESHOLD=$JITTER_THRESHOLD/" /usr/local/bin/check-starlink.sh
+sed -i "s/LOSS_THRESHOLD=5/LOSS_THRESHOLD=$LOSS_THRESHOLD/" /usr/local/bin/s2-check-starlink.sh
+sed -i "s/LATENCY_THRESHOLD=150/LATENCY_THRESHOLD=$LATENCY_THRESHOLD/" /usr/local/bin/s2-check-starlink.sh
+sed -i "s/JITTER_THRESHOLD=30/JITTER_THRESHOLD=$JITTER_THRESHOLD/" /usr/local/bin/s2-check-starlink.sh
 
 # Set interfaces in route-decision-loop.sh
-sed -i "s/ens4/$PRIMARY_IFACE/g" /usr/local/bin/route-decision-loop.sh
-sed -i "s/ens5/$BACKUP_IFACE/g" /usr/local/bin/route-decision-loop.sh
+sed -i "s/ens4/$PRIMARY_IFACE/g" /usr/local/bin/s2-route-decision-loop.sh
+sed -i "s/ens5/$BACKUP_IFACE/g" /usr/local/bin/s2-route-decision-loop.sh
 
-chmod +x /usr/local/bin/check-starlink.sh
-chmod +x /usr/local/bin/failover.sh
-chmod +x /usr/local/bin/route-decision-loop.sh
+chmod +x /usr/local/bin/s2-check-starlink.sh
+chmod +x /usr/local/bin/s2-failover.sh
+chmod +x /usr/local/bin/s2-route-decision-loop.sh
 
 # Create systemd service
 cat > /etc/systemd/system/wan-failover.service << 'EOF'

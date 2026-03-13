@@ -84,4 +84,4 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=sim
+Type=simple

@@ -41,8 +41,8 @@ logger -t "$LOG_TAG" "SL1=$SCORE1 SL2=$SCORE2 Current=$CURRENT Counter=$COUNTER"
 SCORE_DIFF=$(echo "$SCORE1 - $SCORE2" | bc -l)
 SCORE_DIFF_ABS=$(echo "if ($SCORE_DIFF < 0) -($SCORE_DIFF) else $SCORE_DIFF" | bc -l)
 
+# First check: if scores are too similar, always prefer primary
 if (( $(echo "$SCORE_DIFF_ABS < $DEAD_BAND" | bc -l) )); then
-    # Scores are too similar, prefer primary
     BEST="primary"
 elif [ "$CURRENT" = "primary" ] && (( $(echo "$SCORE2 < $SCORE1" | bc -l) )); then
     # Only switch FROM primary if backup is significantly better

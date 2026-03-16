@@ -10,7 +10,7 @@ STATE_FILE="/tmp/failover_state"
 COUNTER_FILE="/tmp/failover_counter"
 LOG_TAG="failover"
 
-FAILOVER_THRESHOLD=2
+FAILOVER_THRESHOLD=3
 RECOVERY_THRESHOLD=2
 DEAD_BAND=2.0
 FAILOVER_RATIO=1.5
@@ -94,13 +94,21 @@ if (( COUNTER < REQUIRED )); then
     exit 0
 fi
 
-# Execute state change
+# Execute state change using metrics (lower metric = preferred)
 if [ "$BEST" = "primary" ]; then
     logger -t "$LOG_TAG" "Switching to PRIMARY (SL1=$SCORE1 vs SL2=$SCORE2)"
-    ip route replace default via $PRIMARY_GW dev $PRIMARY_IFACE
+    # Set primary to preferred (metric 100), backup to secondary (metric 200)
+    ip route change default via $PRIMARY_GW dev $PRIMARY_IFACE metric 100 2>/dev/null || \
+        ip route add default via $PRIMARY_GW dev $PRIMARY_IFACE metric 100
+    ip route change default via $BACKUP_GW dev $BACKUP_IFACE metric 200 2>/dev/null || \
+        ip route add default via $BACKUP_GW dev $BACKUP_IFACE metric 200
 else
     logger -t "$LOG_TAG" "Switching to BACKUP (SL1=$SCORE1 vs SL2=$SCORE2)"
-    ip route replace default via $BACKUP_GW dev $BACKUP_IFACE
+    # Set backup to preferred (metric 100), primary to secondary (metric 200)
+    ip route change default via $BACKUP_GW dev $BACKUP_IFACE metric 100 2>/dev/null || \
+        ip route add default via $BACKUP_GW dev $BACKUP_IFACE metric 100
+    ip route change default via $PRIMARY_GW dev $PRIMARY_IFACE metric 200 2>/dev/null || \
+        ip route add default via $PRIMARY_GW dev $PRIMARY_IFACE metric 200
 fi
 
 echo "$BEST" > "$STATE_FILE"

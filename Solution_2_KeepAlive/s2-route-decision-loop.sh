@@ -9,5 +9,5 @@ while true; do
     /usr/local/bin/s2-check-starlink.sh "$PRIMARY_IFACE" /tmp/starlink1_score
     /usr/local/bin/s2-check-starlink.sh "$BACKUP_IFACE" /tmp/starlink2_score
     /usr/local/bin/s2-failover.sh
-    sleep 10
+    sleep 2
 done

@@ -1,18 +1,20 @@
 #!/bin/bash
 # /usr/local/bin/s2-failover.sh
+# Usage: PRIMARY_IFACE=ens3 BACKUP_IFACE=ens4 s2-failover.sh
 
-PRIMARY_IFACE="ens3"
-BACKUP_IFACE="ens4"
+PRIMARY_IFACE="${PRIMARY_IFACE:-ens4}"
+BACKUP_IFACE="${BACKUP_IFACE:-ens5}"
 SCORE1_FILE="/tmp/starlink1_score"
 SCORE2_FILE="/tmp/starlink2_score"
 STATE_FILE="/tmp/failover_state"
 COUNTER_FILE="/tmp/failover_counter"
-HOLD_FILE="/tmp/failover_hold"
 LOG_TAG="failover"
 
-FAILOVER_THRESHOLD=2
-RECOVERY_THRESHOLD=3
-HOLD_TIMER=60
+FAILOVER_THRESHOLD=3
+RECOVERY_THRESHOLD=2
+DEAD_BAND=2.0
+FAILOVER_RATIO=1.5
+RECOVERY_RATIO=1.2
 
 # Get gateway IPs dynamically
 PRIMARY_GW=$(ip route show dev $PRIMARY_IFACE proto dhcp | awk '/default/ {print $3}')
@@ -35,11 +37,36 @@ COUNTER=$(cat "$COUNTER_FILE" 2>/dev/null || echo "0")
 
 logger -t "$LOG_TAG" "SL1=$SCORE1 SL2=$SCORE2 Current=$CURRENT Counter=$COUNTER"
 
-# Determine best link
-if (( $(echo "$SCORE1 <= $SCORE2" | bc -l) )); then
-    BEST="primary"
+# Determine best link (with ratio-based switching)
+SCORE_DIFF=$(echo "$SCORE1 - $SCORE2" | bc -l)
+SCORE_DIFF_ABS=$(echo "if ($SCORE_DIFF < 0) -($SCORE_DIFF) else $SCORE_DIFF" | bc -l)
+
+if (( $(echo "$SCORE_DIFF_ABS < $DEAD_BAND" | bc -l) )); then
+    # Scores are too similar, stick with current
+    BEST="$CURRENT"
+elif [ "$CURRENT" = "primary" ] && (( $(echo "$SCORE2 < $SCORE1" | bc -l) )); then
+    # Only switch FROM primary if backup is significantly better
+    FAILOVER_SCORE=$(echo "$SCORE1 * $FAILOVER_RATIO" | bc -l)
+    if (( $(echo "$SCORE2 < $FAILOVER_SCORE" | bc -l) )); then
+        BEST="backup"
+    else
+        BEST="primary"
+    fi
+elif [ "$CURRENT" = "backup" ] && (( $(echo "$SCORE1 < $SCORE2" | bc -l) )); then
+    # Only switch back to primary if it's significantly better
+    RECOVERY_SCORE=$(echo "$SCORE2 * $RECOVERY_RATIO" | bc -l)
+    if (( $(echo "$SCORE1 < $RECOVERY_SCORE" | bc -l) )); then
+        BEST="primary"
+    else
+        BEST="backup"
+    fi
 else
-    BEST="backup"
+    # Default logic
+    if (( $(echo "$SCORE1 <= $SCORE2" | bc -l) )); then
+        BEST="primary"
+    else
+        BEST="backup"
+    fi
 fi
 
 # No change needed
@@ -52,20 +79,11 @@ fi
 ((COUNTER++))
 echo "$COUNTER" > "$COUNTER_FILE"
 
-# Determine threshold
+# Determine threshold (how many consecutive good reads before switching)
 if [ "$CURRENT" = "primary" ] && [ "$BEST" = "backup" ]; then
     REQUIRED=$FAILOVER_THRESHOLD
 elif [ "$CURRENT" = "backup" ] && [ "$BEST" = "primary" ]; then
     REQUIRED=$RECOVERY_THRESHOLD
-    if [ -f "$HOLD_FILE" ]; then
-        HOLD_START=$(cat "$HOLD_FILE")
-        NOW=$(date +%s)
-        ELAPSED=$((NOW - HOLD_START))
-        if (( ELAPSED < HOLD_TIMER )); then
-            logger -t "$LOG_TAG" "Hold timer active (${ELAPSED}s / ${HOLD_TIMER}s) — not reverting yet"
-            exit 0
-        fi
-    fi
 else
     REQUIRED=$FAILOVER_THRESHOLD
 fi
@@ -80,11 +98,9 @@ fi
 if [ "$BEST" = "primary" ]; then
     logger -t "$LOG_TAG" "Switching to PRIMARY (SL1=$SCORE1 vs SL2=$SCORE2)"
     ip route replace default via $PRIMARY_GW dev $PRIMARY_IFACE
-    date +%s > "$HOLD_FILE"
 else
     logger -t "$LOG_TAG" "Switching to BACKUP (SL1=$SCORE1 vs SL2=$SCORE2)"
     ip route replace default via $BACKUP_GW dev $BACKUP_IFACE
-    date +%s > "$HOLD_FILE"
 fi
 
 echo "$BEST" > "$STATE_FILE"

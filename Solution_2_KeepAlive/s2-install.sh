@@ -40,7 +40,7 @@ if [ "$CONFIRM" != "y" ]; then exit 0; fi
 # Step 1: Install packages
 echo "[1/4] Installing packages..."
 apt update
-apt install -y fping bc iptables-persistent keepalived
+apt install -y fping bc iptables-persistent
 
 # Enable IP forwarding
 sed -i 's/^#\s*net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' /etc/sysctl.conf
@@ -58,10 +58,6 @@ echo "[3/4] Installing scripts..."
 cp "$SCRIPT_DIR/s2-check-starlink.sh" /usr/local/bin/
 cp "$SCRIPT_DIR/s2-failover.sh" /usr/local/bin/
 cp "$SCRIPT_DIR/s2-route-decision-loop.sh" /usr/local/bin/
-
-# Set interfaces in s2-failover.sh
-sed -i "s/PRIMARY_IFACE=\"ens4\"/PRIMARY_IFACE=\"$PRIMARY_IFACE\"/" /usr/local/bin/s2-failover.sh
-sed -i "s/BACKUP_IFACE=\"ens5\"/BACKUP_IFACE=\"$BACKUP_IFACE\"/" /usr/local/bin/s2-failover.sh
 
 # Set thresholds in s2-check-starlink.sh
 sed -i "s/LOSS_THRESHOLD=5/LOSS_THRESHOLD=$LOSS_THRESHOLD/" /usr/local/bin/s2-check-starlink.sh
@@ -81,6 +77,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+Environment="PRIMARY_IFACE=$PRIMARY_IFACE"
+Environment="BACKUP_IFACE=$BACKUP_IFACE"
 ExecStart=/usr/local/bin/s2-route-decision-loop.sh $PRIMARY_IFACE $BACKUP_IFACE
 Restart=always
 RestartSec=5
@@ -92,27 +90,6 @@ EOF
 systemctl daemon-reload
 systemctl enable --now wan-failover
 
-# Step 4: Configure Keepalived
-echo "[4/4] Configuring Keepalived..."
-cat > /etc/keepalived/keepalived.conf << EOF
-vrrp_script check_primary {
-    script "/usr/local/bin/s2-check-starlink.sh $PRIMARY_IFACE /tmp/starlink1_score"
-    interval 5
-    fall 3
-    rise 5
-}
-
-vrrp_script check_backup {
-    script "/usr/local/bin/s2-check-starlink.sh $BACKUP_IFACE /tmp/starlink2_score"
-    interval 5
-    fall 3
-    rise 5
-}
-EOF
-
-systemctl enable keepalived
-systemctl restart keepalived
-
 echo "========================================="
 echo " Installation Complete"
 echo "========================================="
@@ -121,7 +98,6 @@ echo " Backup WAN:   $BACKUP_IFACE"
 echo ""
 echo " Services:"
 echo " WAN Failover: $(systemctl is-active wan-failover)"
-echo " Keepalived:   $(systemctl is-active keepalived)"
 echo ""
 echo " Check logs:"
 echo " journalctl -t failover -f"

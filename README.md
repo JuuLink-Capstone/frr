@@ -40,22 +40,71 @@ It is important to be able to perform individual unit tests on each of the FRR s
 * FRR configuration input (what cli options can be used to input an arbitrary config file)
 
 
-### Kevin's recommendations:
+Dual-WAN Failover — Setup & Usage
+Prerequisites
 
-* BGP
-* OSPF
-* Hot-swap router protocol (VRRP?)
-* Route maps may be important for preserving IPSEC tunnels for the church's stuff. Can we keep it up?
-* Access control lists or firewalld? perhaps
-* NAT functionality? Do we masquerade in the Linux kernel, or pull it into FRR? 
+Ubuntu/Debian-based Linux system
+Two active WAN interfaces (e.g. ens4, ens5)
+Root or sudo access
+The following companion scripts in the same directory as install.sh:
 
-* 1. H-config, do we need router 1 aware of router 2? Or can we blindly forward when a route goes down. SLU treats the other as an ISP.
-* 2. H-config, have router 1 and 2 aware of each other, what the tradeoffs are of both configurations.
+s2-check-starlink.sh
+s2-failover.sh
+s2-route-decision-loop.sh
 
-### Kevin's questions
 
-* How do we determine with high accuracy when the Versa switches over to a new link? 
-* Probe the overlay and the underlay. I think that the overlay is the flow of data from one endpoint to another, while the underlay is the actual route that is taken.
-* Test 2: both Versas, when the left Versa has a link go bad, how long does it take Versa to decide to switch to another one. Detect when Versa decides to switch, and when the switch effectively takes place. 
+Step 1 — Download and set permissions
+After downloading the scripts, you must mark install.sh as executable before it can be run:
+bashchmod +x install.sh
+If you also need to set permissions on the companion scripts manually:
+bashchmod +x s2-check-starlink.sh s2-failover.sh s2-route-decision-loop.sh
 
-* Can we omit the church's IPSEC tunnels from the failover / switchover? AAA is Authentication Authorization and Accounting, keeps track of devices that have accepted the agreement for the wifi.
+Step 2 — Run the installer
+bashsudo ./install.sh
+
+The script will automatically escalate to root if you run it without sudo.
+
+
+Step 3 — Answer the prompts
+The installer will walk you through a short series of questions:
+PromptExample inputDescriptionPrimary WAN interfaceens4Your main internet-facing interfaceBackup WAN interfaceens5Your failover interfacePacket loss threshold %5Failover triggers above this loss percentageLatency threshold ms150Failover triggers above this latencyJitter threshold ms30Failover triggers above this jitter value
+All thresholds have defaults — just press Enter to accept them.
+After reviewing the configuration summary, type y and press Enter to proceed.
+
+What the installer does
+
+Installs required packages (fping, bc, iptables-persistent)
+Enables IPv4 forwarding
+Configures NAT masquerading on both WAN interfaces
+Copies monitoring and failover scripts to /usr/local/bin/
+Applies your SLA thresholds to the check script
+Creates and enables a wan-failover systemd service that starts automatically on boot
+
+
+Verifying the installation
+Check that the service is running:
+bashsystemctl status wan-failover
+
+Viewing logs
+bash# Failover events
+journalctl -t failover -f
+
+# Primary interface health checks
+journalctl -t starlink-check-ens4 -f
+
+# Backup interface health checks
+journalctl -t starlink-check-ens5 -f
+
+Replace ens4 / ens5 with the interface names you configured during install.
+
+
+Uninstalling
+To stop and remove the service:
+bashsudo systemctl stop wan-failover
+sudo systemctl disable wan-failover
+sudo rm /etc/systemd/system/wan-failover.service
+sudo systemctl daemon-reload
+To remove the installed scripts:
+bashsudo rm /usr/local/bin/s2-check-starlink.sh
+sudo rm /usr/local/bin/s2-failover.sh
+sudo rm /usr/local/bin/s2-route-decision-loop.sh

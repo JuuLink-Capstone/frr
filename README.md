@@ -40,7 +40,7 @@ It is important to be able to perform individual unit tests on each of the FRR s
 * FRR configuration input (what cli options can be used to input an arbitrary config file)
 
 
-Dual-WAN Failover — Setup & Usage
+### Setup & Usage
 Prerequisites
 
 Ubuntu/Debian-based Linux system

@@ -24,7 +24,7 @@ bashsudo ./install.sh
 The script will automatically escalate to root if you run it without sudo.
 
 
-Step 3 — Answer the prompts
+#### Step 3 — Answer the prompts
 The installer will ask you five questions. All three threshold values have sensible defaults — just press Enter to accept them.
 Interfaces
 

@@ -7,9 +7,9 @@ Two active WAN interfaces (e.g. ens4, ens5)
 Root or sudo access
 The following companion scripts in the same directory as install.sh:
 
-s2-check-starlink.sh
-s2-failover.sh
-s2-route-decision-loop.sh
+- s2-check-starlink.sh
+- s2-failover.sh
+- s2-route-decision-loop.sh
 
 
 #### Step 1 — Download and set permissions

@@ -1,0 +1,255 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+% The preceding line is only needed to identify funding in the first footnote. If that is unneeded, please comment it out.
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{tabularx}
+\usepackage{booktabs}
+\usepackage{svg}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+\begin{document}
+
+\title{Failover Dynamics in SD-WAN Versus Open-Source Traditional Routing: A Performance and Resiliency Analysis}
+
+\author{\IEEEauthorblockN{E. Sorensen, C. Miner, C. Schurig, S. Magoffin, B. Scott, M. Shuldberg }
+\IEEEauthorblockA{\textit{Department of Electrical and Computer Engineering} \\ 
+\textit{Brigham Young University}\\
+% Provo, Utah, USA \\
+\{sorensen\_e, cminer1, cschurig, sm996, bscott32, mshuldbe\}@byu.edu}
+}
+
+\maketitle
+
+\section{Introduction}
+
+Wide-area networking has evolved from static leased circuits and rigid routing paradigms into a dynamic environment shaped by application-aware traffic demands, multi-cloud interconnectivity, and heterogeneous underlay networks. Traditional routing architectures, built on distributed protocols such as Open Shortest Path First (OSPF) and Border Gateway Protocol (BGP)~\cite{rfc2328, rfc4271}, provide deterministic path selection and convergence based on topology awareness. While these mechanisms are robust and well understood, they were not designed to incorporate real-time performance metrics such as latency, jitter, or packet loss into forwarding decisions, particularly in environments with multiple diverse transport links.
+
+Software-Defined Wide Area Networking (SD-WAN) has emerged as a dominant architectural model that addresses these limitations by decoupling the control and data planes and introducing centralized, policy-driven traffic orchestration~\cite{cisco_sdwanoverview}. By continuously monitoring link conditions and steering traffic according to application requirements and performance thresholds, SD-WAN platforms aim to deliver improved resiliency, rapid failover, and optimized application experience across broadband, MPLS, and cellular connections~\cite{techtarget2023wancomparison, fortinet_securesdwan}. These capabilities have driven widespread adoption, particularly as enterprises transition toward cloud-based and Software-as-a-Service (SaaS) workloads~\cite{gartner_sdwanguide}.
+
+Despite these advantages, commercial SD-WAN solutions introduce significant cost and vendor dependency, which may be prohibitive for smaller organizations, research environments, or cost-sensitive deployments. At the same time, modern open-source routing platforms and Linux-based networking stacks have matured to the point where they can support advanced traffic engineering techniques, including policy-based routing, dynamic path monitoring, and automated failover. This raises a practical question: to what extent can SD-WAN-like behavior be reproduced using open-source tools on commodity hardware, and how closely can such a system approximate the performance characteristics of enterprise SD-WAN solutions?
+
+This study does not seek to position open-source routing as a direct replacement for SD-WAN, nor to determine which approach is categorically superior. Instead, we treat a commercial SD-WAN implementation as a performance and behavior baseline, using it to define expected characteristics such as failover responsiveness, traffic steering efficiency, and stability under adverse network conditions. We then design and implement a functionally analogous system using open-source components, with the goal of evaluating how effectively it can replicate those characteristics in a controlled environment.
+
+To support this analysis, we conduct a series of controlled experiments simulating realistic network impairments across multiple links, including latency variation, packet loss, and link failure scenarios. Metrics such as failover latency, packet loss during convergence, throughput consistency, and application-level performance are collected and compared relative to the SD-WAN baseline. By grounding the evaluation in empirical data, this work aims to quantify the trade-offs between cost, complexity, and performance, providing insight into whether lower-cost, open-source alternatives can achieve sufficiently comparable behavior for practical deployment scenarios.
+
+The remainder of this paper is organized as follows. Section 2, Architectural Principles, establishes the conceptual foundation for the study by examining the operational models of both traditional routing and SD-WAN, including their respective control mechanisms, path selection strategies, and failover behaviors. Section 3, Related Works, reviews existing literature and industry analyses relevant to WAN resiliency and convergence performance. Section 4, Methodology, details the experimental framework, including the hardware platform, software configuration, formal definition of failover, and the network impairment conditions used for testing. Section 5, Results, presents the collected measurements and comparative analysis, evaluating quantitative performance metrics alongside observed user experience characteristics. Finally, Section 6 concludes the paper by synthesizing the findings and outlining their implications for network design and deployment decisions.
+
+\section{Architectural Principles}
+
+\subsection{Defining Failover}
+
+The objective of this evaluation is not simply to measure whether traffic eventually reroutes after a disruption, but to characterize how each system behaves while traffic is actively flowing. Failover is thus defined as the transition of traffic from one WAN path to another in response to failure or performance degradation. We evaluate failover along two dimensions: interface-level continuity and application-layer performance.
+
+Interface-level continuity measures whether forwarding is disrupted during the transition. By monitoring traffic at the WANulator interface, we observe whether the system grounds all transmitted frames during a failover event (a ``gap''), or whether frames continue flowing uninterrupted across path changes. This metric captures how quickly the edge device detects impairment, recomputes routing decisions, and updates forwarding tables. It is independent of application semantics and reflects the system's raw path-switching capability.
+
+Application-layer performance evaluates service quality as experienced by end users. We measure request success rates, response time distribution, and throughput consistency using Locust, tracking whether long-lived HTTP sessions survive path transitions and how quickly throughput recovers to baseline. A system may exhibit brief interface-level gaps that are nonetheless masked by TCP retransmission and session state preservation, resulting in sub-1\% application failure rates. Conversely, pathological control-plane behavior—such as rapid oscillation between links—may preserve interface continuity while introducing instability.
+
+By separating these perspectives, we avoid conflating internal routing churn with user-visible service disruption. This framework allows us to quantify failover quality not as binary success/failure, but as a measurable process comparing the costs (interface gaps, throughput degradation) and benefits (resiliency, session preservation) of each architectural approach under identical impairment conditions.
+
+\subsection{Versa Networks SD-WAN as Baseline}
+
+Software-Defined Wide Area Networking decouples control and data planes, enabling centralized policy orchestration and dynamic path selection based on real-time performance metrics. Rather than relying solely on distributed routing protocol convergence, SD-WAN platforms continuously monitor link conditions and proactively steer traffic before outages occur.
+
+
+
+\begin{itemize}
+    \item \textbf{Centralized Policy and Orchestration:} SD-WAN solutions typically include a centralized controller or orchestrator~\cite{cisco_sdwanoverview}. Network administrators define policies—such as prioritizing voice traffic or preferring low-latency paths—which are distributed to edge devices. While forwarding decisions still occur at the edge, policy logic and configuration management are centrally managed. This reduces configuration variance and enables network-wide consistency.
+
+    \item \textbf{Overlay Abstraction} SD-WAN builds encrypted tunnels across multiple available underlay transports (e.g., broadband, MPLS, cellular)~\cite{fortinet_securesdwan}. From the perspective of the overlay, these links become interchangeable transport paths. Traffic is encapsulated and steered dynamically based on measured performance metrics. The overlay model decouples routing logic from the physical transport, allowing traffic to shift between links without relying solely on underlay protocol convergence.
+
+    \item \textbf{Continuous Performance Monitoring and Dynamic Path Selection:} Unlike traditional routing metrics that focus on reachability, SD-WAN platforms actively measure latency, jitter, and packet loss across all available links~\cite{fortinet_securesdwan}. Path selection can be adjusted in near real time when performance thresholds are exceeded—even if the link has not technically failed. This enables what vendors describe as “brownout detection,” where degraded links are avoided before a complete outage occurs.
+\end{itemize}
+
+The architectural objective is application-aware resiliency~\cite{gartner_sdwanguide}. Instead of reacting only to binary link failures, SD-WAN aims to maintain service quality during instability by proactively steering traffic. Failover can occur at a per-application or per-flow level rather than at a full routing-table recalculation event.
+
+This abstraction introduces additional components: controllers, 
+tunnel encapsulation overhead, and performance monitoring mechanisms. 
+The effectiveness of SD-WAN therefore depends not only on conceptual 
+design but also on implementation quality, detection intervals, and 
+hardware performance. Despite these complexities, we selected Versa 
+Networks VOS SD-WAN as our baseline for good reasons. First, link 
+impairment detection is highly sensitive: Versa's proprietary inline 
+loss measurement protocol can detect less than 1\% packet loss even 
+during active traffic flow. This enables rapid SLA evaluation. Second, 
+failover responsiveness is engineered for low latency: complete link 
+failures trigger path switching in sub-millisecond intervals, and 
+brownout scenarios complete full detection-to-switch cycles within 300 
+milliseconds. Third, Versa supports session continuity mechanisms—packet 
+replication duplicates traffic across paths, and Forward Error Correction 
+(FEC) adds parity information under SLA violations. These features enable 
+zero-retransmission failover for real-time applications. Finally, the 
+control plane is resilient: graceful restart retains routes for 8 hours 
+if controllers become unreachable, enabling continued operation. By 
+selecting Versa as the baseline, we establish a demanding but achievable 
+performance target for comparison with open-source alternatives augmented 
+through monitoring and traffic engineering.
+
+\subsection{Open-Source Traditional Routing as a Comparative Platform}
+
+The open-source routing stack implemented in this study was designed 
+to approximate SD-WAN-like failover behavior using commodity hardware 
+and freely available software components, without relying on proprietary 
+control planes or vendor-managed orchestration. The system runs 
+FRRouting (FRR)~\cite{frr2023} on Ubuntu 22.04, using BGP to 
+establish routing relationships across the available WAN links. Rather 
+than a centralized policy engine, path selection emerges from distributed 
+protocol convergence, supplemented by active performance monitoring and 
+scripted traffic steering logic.
+
+To introduce SLA awareness into an otherwise reachability-driven 
+architecture, a custom monitoring and failover framework was deployed 
+alongside FRR. Link health is evaluated continuously using fping-based 
+probes~\cite{fping}, which measure packet loss, latency, and jitter on 
+a per-interface basis against configurable thresholds---defaulting to 
+5\% packet loss, 150\,ms latency, and 30\,ms jitter. These thresholds 
+are defined at installation time and injected into the monitoring 
+scripts, allowing the system to be tuned to match the SLA profiles 
+configured on the SD-WAN appliance. When a primary WAN interface 
+exceeds any threshold, a failover script redirects traffic to the backup 
+interface using \texttt{iptables} NAT rules~\cite{iptables_persistent}, 
+without waiting for BGP convergence to occur organically.
+
+This architecture, depicted in Fig.~\ref{hwconfig}, connects two 
+Starlink uplinks and one BYU wired Ethernet connection through a 
+WANulator link degrader before reaching the traditional router~\cite{wanulator_home}. 
+A management link over BYU Internet remains isolated from experimental 
+traffic, preserving out-of-band access during impairment events. A 
+\texttt{systemd} service runs a continuous route decision loop, 
+restarting automatically on failure and logging transitions for post-hoc 
+analysis. The result is a traditional routing platform augmented with 
+reactive, threshold-driven failover---functionally analogous to SD-WAN 
+SLA monitoring, though implemented without overlay abstraction or 
+session-aware traffic steering.
+
+\section{Related Works}
+
+Research on wide-area network resiliency has historically focused on the convergence behavior of distributed routing protocols. Early work by Labovitz \textit{et al.} demonstrated that Internet routing protocols such as BGP can exhibit significant instability and delayed convergence following topology changes, resulting in transient packet loss and degraded performance during recovery events~\cite{labovitz2000}. Subsequent research analyzing BGP convergence properties further highlighted the complexity of distributed routing recovery mechanisms and their sensitivity to timer configuration, routing policy interactions, and network scale~\cite{griffin2002}. These findings illustrate inherent limitations of traditional routing architectures when responding to dynamic network conditions.
+
+The limitations of distributed routing motivated the development of architectures that separate network control logic from packet forwarding. Software-defined networking (SDN) introduced this paradigm by centralizing policy and control decisions while maintaining distributed forwarding devices. McKeown \textit{et al.} first formalized this concept through the OpenFlow architecture, enabling programmable networks and centralized control of forwarding behavior~\cite{mckeown2008}. Later surveys, such as that by Kreutz \textit{et al.}, provide a comprehensive analysis of SDN principles and highlight the benefits of centralized control for traffic engineering, policy management, and network adaptability~\cite{kreutz2015}. These concepts form the architectural foundation upon which many modern wide-area networking solutions are built.
+
+Large-scale deployments have demonstrated the practical advantages of software-defined control in wide-area environments. Jain \textit{et al.} describe the design and operation of Google's B4 inter-datacenter network, which uses centralized traffic engineering to dynamically allocate bandwidth across geographically distributed links~\cite{jain2013}. By decoupling control logic from the underlying transport infrastructure, B4 achieves significantly higher utilization and improved resilience compared to traditional distributed routing approaches. Subsequent studies have further explored traffic engineering and performance optimization in software-defined wide-area networks, reinforcing the potential benefits of centralized path management.
+
+More recently, Software-Defined Wide Area Networking (SD-WAN) has emerged as an enterprise-oriented application of these architectural principles. SD-WAN platforms construct overlay networks across heterogeneous transport links while continuously monitoring metrics such as latency, jitter, and packet loss to dynamically steer application traffic. Surveys of SD-WAN architectures highlight the potential for improved resiliency and application performance through centralized policy orchestration and real-time link evaluation~\cite{sun2018}. However, despite rapid industry adoption, empirical studies directly comparing SD-WAN platforms against optimized traditional routing implementations remain limited. In particular, few controlled experiments evaluate failover behavior under identical impairment conditions. The work presented in this paper seeks to address this gap by conducting a controlled experimental comparison between enterprise SD-WAN hardware and an open-source traditional routing stack operating under equivalent network conditions.
+
+\section{Methodology}
+
+\subsection{Hardware Configuration}
+
+\begin{figure}[tbp]
+\centering
+\includesvg[width=\linewidth]{hardware_config.svg}
+\caption{A visual depiction of the hardware configuration. Traffic is passed from edge node 1 to edge node 2 through either an SD-WAN or traditional router solution, with artificial link degradation on one or more of the paths. An additional management link is provided so that machines maintain access to the Tailscale control plane at all times.}
+\label{hwconfig}
+\end{figure}
+
+Our hardware setup is divided into two sections as follows. Section 1 consists of the main testbed. There are two Starlink connections~\cite{starlink_home} and one connection from BYU’s wired ethernet. The two Starlink links allow us to test having nearly identical ISP starting points, and the BYU ethernet has sufficiently low latency and high bandwidth that it serves as an arbitrarily fast reference link. Each of these are plugged into a machine running a network emulation tool called WANulator, which allows us to add artificial latency, packet loss, jitter, and other impairments to the links as they pass through~\cite{wanulator_home}. The WANulator machine is equipped with two quad-port NICs over PCIe to support transparent bridging across all test links. After the WANulator, there are two paths depending on the testing: either the outputs are plugged into the SD-WAN solution described later, or they are plugged into our traditional routing hardware. Finally, a single node behind the selected router is connected over LAN to act as a traffic generator for simulation and measurement.
+
+The second part of the testbed houses the remote node that hosts traffic endpoints and servers. This node receives one WAN link from BYU’s wired ethernet, providing maximum throughput and minimal latency so that the server side does not become a limiting factor. The WAN link on this side terminates in either a Versa Networks SD-WAN appliance (to allow connection over the SD-WAN overlay) or a commodity off-the-shelf router (serving as a simple endpoint with no custom routing software).
+
+The SD-WAN hardware selected for this test is the Versa Networks CSG 780 appliance, part of the CSG700 series of SD-WAN and SASE edge devices. The CSG700 series are x86-based, enterprise-oriented appliances designed to consolidate routing, SD-WAN, and security functions within a single platform~\cite{versa_csg700_series, versa_csg_appliances}. The CSG 780 model is targeted at medium to large branch deployments and supports multi-gigabit throughput across routing and SD-WAN functions~\cite{versa_csg700_series}. To ensure that packet processing on our custom routing platform is not the bottleneck when compared to an enterprise SD-WAN device, and to give us access to underlying kernel behavior, we provisioned a commodity PC equipped with dual 10 Gbps SFP+ interfaces driven by an Intel x710 chipset. This configuration maximizes hardware packet processing capability while enabling full control over the traditional routing implementation.
+
+To facilitate remote management and monitoring, each WANulator system, traditional routing PC, and edge node includes an additional Ethernet interface dedicated to out-of-band access. This management interface is bound to an instance of Tailscale, a WireGuard-based mesh VPN platform~\cite{tailscale_home}. By separating experimental traffic from administrative access, this configuration ensures that impairment conditions and failover events do not disrupt control-plane visibility. It also enables secure remote configuration, log retrieval, and real-time observation of routing behavior without introducing additional load or variability into the measured WAN paths.
+
+\subsection{Software Configuration}
+
+The SD-WAN software stack is provided directly as part of the Versa Networks hardware platform~\cite{versa_csg700_series}. No modification to the underlying system was performed. Configuration was completed exclusively through the router management interface. Each SD-WAN appliance was assigned a profile corresponding to its physical connectivity. These profiles define which WAN links are present, how many links are active, and which remote SD-WAN appliances participate in the overlay fabric. Additionally, link prioritization policies were configured to establish preferred paths and backup paths. Service Level Agreement (SLA) thresholds were defined to specify maximum acceptable latency, jitter, and packet loss values prior to triggering failover. Versa also provides mechanisms for graceful or “smooth” failover, which leverage continuous link monitoring and session-aware traffic steering to reduce disruption during path transitions~\cite{versa_sla_monitoring}. These features were enabled where appropriate to reflect a realistic enterprise deployment.
+
+The traditional routing platform runs FRRouting (FRR)~\cite{frr2023} on Ubuntu 22.04. FRR provides a full open-source routing stack supporting BGP, OSPF, and related protocols. In this configuration, BGP was used to establish routing relationships across the available WAN links. Convergence behavior therefore reflects distributed protocol dynamics rather than centralized policy orchestration. To supplement BGP’s reachability-based decision making with SLA visibility, Smokeping~\cite{smokeping_home} was deployed to continuously measure latency and packet loss across each WAN path. Smokeping provides time-series visibility into link health, allowing correlation between measured impairment and routing behavior. Path manipulation and failover enforcement were implemented using iptables-persistent~\cite{iptables_persistent}, enabling deterministic rewriting or prioritization of traffic flows based on measured link conditions. This approach approximates performance-aware routing within a traditional architecture while preserving protocol-driven convergence.
+
+The software running on the WANulator system is the WANulator network emulation platform~\cite{wanulator_home}. WANulator functions as a transparent Layer-2 bridge between physical interfaces, allowing controlled impairment of traffic as it traverses the device. It enables precise insertion of latency, jitter, packet loss, bandwidth limits, and reordering characteristics on a per-interface basis. In this configuration, WANulator serves as the deterministic impairment engine for the experiment. Rather than relying on naturally unstable links, we inject repeatable and measurable degradation patterns, ensuring that both the SD-WAN and traditional routing systems are evaluated under identical and reproducible conditions.
+
+The edge node responsible for traffic generation uses Python’s Locust framework~\cite{locust_home} to simulate large numbers of concurrent users and application sessions. Locust enables scalable, scriptable workload generation that can model HTTP transactions and sustained request patterns. On the receiving side, the remote edge node hosts multiple Apache HTTP server instances~\cite{apache_httpd}, configured with varying resource allocations to emulate different service profiles. This structure allows the testbed to generate peer-to-peer traffic as well as internet-bound request patterns under controlled load, ensuring that observed failover behavior reflects realistic application demands rather than synthetic packet streams.
+
+\subsection{Testing Conditions}
+
+\begin{table}[tbp]
+\renewcommand{\arraystretch}{1.2} 
+\centering
+\caption{Tests Performed}
+\begin{tabularx}{\linewidth}{@{}lXX@{}} \toprule
+\textbf{Test Protocol} & \textbf{Test Length} & \textbf{Failure Type} \\ \midrule
+TCP & 15 min    & Complete \\
+TCP & 15 min    & 30\% Packet Loss \\
+TCP & 15 min    & 50 ms Latency \\
+UDP & 15 min    & 10 ms Jitter \\
+UDP & 15 min    & Complete \\ \bottomrule
+\end{tabularx}
+\label{tests}
+\end{table}
+
+Both routing environments were subjected to identical experimental conditions. After deploying the hardware and software configurations described in previous sections, we executed a structured suite of tests designed to isolate failover behavior under controlled impairment. Each test case varied one or more traffic characteristics while holding physical topology constant. A summary of the individual scenarios—including protocol, request size, request rate, and test duration—is provided in Table~\ref{tests}.
+
+Traffic generation was performed using Locust, which provides real-time visibility into application-layer performance during load. Key metrics collected from Locust included total request rate (requests per second), response time distribution (including median and percentile values), failure rate, and active user count over time. Of particular importance during failover events were response time spikes, increases in request failures, and recovery time to steady-state throughput. These metrics allowed correlation between link transition events and observable service degradation.
+
+To supplement application-layer measurements, continuous ICMP probing was conducted using fping~\cite{fping}. Unlike traditional ping utilities that operate serially, fping supports high-rate, parallelized probing and timestamped output, making it suitable for capturing short-lived disruption during path transitions. This produced a steady, measurable heartbeat between edge nodes. Packet loss bursts, latency inflation, and jitter during impairment windows were used as a proxy for user-perceived instability. When analyzed alongside Locust metrics, fping data helped distinguish between application-layer failures and transient network-layer re-convergence.
+
+The test matrix intentionally varied multiple dimensions of traffic behavior. Protocols included both connection-oriented and stateless request models. Request payload sizes ranged from small transactions representative of lightweight API calls to larger transfers simulating content retrieval. Request rates were adjusted to represent light, moderate, and sustained load conditions, and test durations were extended long enough to observe both steady-state behavior and recovery dynamics following induced impairment. By varying these parameters systematically, the evaluation captures not only whether failover occurs, but how system behavior scales with load intensity and session persistence.
+
+\section{Results}
+
+Our experimental evaluation collected three independent test runs per scenario, each lasting approximately five minutes under sustained load. Measurements were obtained by monitoring traffic at the interface level of the WANulator system, capturing all forwarded frames including application traffic, ICMP probes from fping, routing control traffic, and health-monitoring packets exchanged by the SD-WAN system. This vantage point provided a comprehensive view of traffic transition behavior independent of either system's internal metrics. Results are organized along two primary dimensions: failover timing and performance during path transitions, and the unexpected discovery of link flapping behavior under certain degradation conditions.
+
+\subsection{Timing and Performance}
+
+The primary objective of this study was to evaluate whether each system could maintain service continuity during failover events—specifically, whether active connections could survive path transitions without perceptible interruption to the application layer.
+
+\begin{figure}[tbp]
+\centering
+\includegraphics[width=\linewidth]{IMAGE_TIMESERIES_FAILOVER}
+\caption{Time-series comparison of traffic continuity during worst-case failover scenarios. The SD-WAN configuration (top) exhibits zero traffic gaps during link transition. The FRR configuration (bottom) exhibits a discrete traffic gap during packet loss impairment, with full recovery occurring post-transition. Both systems maintain application-layer continuity under complete link failure and latency scenarios.}
+\label{timeseries_failover}
+\end{figure}
+
+\subsubsection{SD-WAN Performance}
+
+The Versa Networks SD-WAN appliance demonstrated zero traffic discontinuities across all test scenarios, including TCP-based workloads under complete link failure, packet loss, and latency impairment. Locust-based request telemetry reported less than 1\% request failure across all executed tests, with request rates remaining consistent and stable throughout each five-minute test window. This result aligns with the architectural design of SD-WAN: continuous per-link performance monitoring enables proactive traffic steering before outage conditions manifest. The SD-WAN appliance was able to monitor and evaluate link conditions to within approximately 1\% accuracy relative to the injected impairment thresholds. By maintaining an overlay abstraction, the system achieved path switching beneath the application layer without forcing endpoint or session re-initialization. This behavior was consistent regardless of whether the impairment constituted a catastrophic failure or a gradual degradation event.
+
+\subsubsection{FRR with Monitoring}
+
+The open-source FRR-based system performed comparably to SD-WAN across most test scenarios, showing no traffic disruption during link failure conditions, latency introduction, or jitter injection. However, a notable exception emerged during packet loss impairment tests: FRR exhibited traffic gaps averaging 12 seconds in duration, with individual events ranging from 6 to 16 seconds. These gaps occurred exclusively during the active impairment window; no gaps were observed during link restoration or steady-state operation under normal conditions. Across all three packet loss test runs, exactly one gap event per test was recorded at the WANulator interface level. Despite these transient traffic interruptions, Locust telemetry reported less than 1\% request failures overall, suggesting that the gaps were brief enough to permit TCP connection survival and session state preservation in most cases. Request throughput did degrade during the gap window, reflecting the traffic interruption visible at the interface level. Following gap resolution, throughput returned to baseline levels without requiring manual intervention or connection re-establishment. 
+
+The 12-second gap magnitude is longer than would typically be acceptable in modern enterprise environments and represents a meaningful disadvantage relative to the SD-WAN baseline. The underlying cause of these delays remains partially inconclusive: the delays occurred during impairment conditions that may have disrupted BGP beacons, health monitoring probes, or the iptables-based traffic steering logic. Isolating the precise mechanism would require deeper instrumentation of the FRR kernel module and BGP control plane telemetry, which was not feasible within the scope of this study.
+
+\subsection{Flapping: An Unexpected Discovery}
+
+\begin{figure}[tbp]
+\centering
+\includegraphics[width=\linewidth]{IMAGE_FLAPPING_TIMESERIES}
+\caption{SD-WAN link flapping behavior observed during the 20\% packet loss test. The system continuously transitions between available WAN paths approximately every 10 seconds, corresponding to the SD-WAN's configured action interval. Despite the link oscillation, no traffic gaps or application-layer failures occur. Each transition is completed within the monitoring interval, maintaining session continuity and request throughput.}
+\label{flapping_behavior}
+\end{figure}
+
+During testing of the 20\% packet loss impairment scenario, an unexpected phenomenon emerged: the SD-WAN system entered a state of continuous link flapping, alternating between available paths approximately every 10 seconds. This behavior persisted throughout the impairment window and ceased upon link restoration to normal conditions. The underlying cause of the flapping is conceptually straightforward: the configured SLA thresholds and the injected impairment level were sufficiently similar that the SD-WAN's detection and action interval could not definitively classify the link as either acceptable or degraded. As a result, the system continuously oscillated between ``accept this path'' and ``reject this path'' decisions, each transition occurring at the 10-second action interval configured for the policy. 
+
+Despite the link oscillation, the SD-WAN maintained service continuity: no traffic gaps occurred, application request rates remained steady, and Locust telemetry showed no elevation in failure rates. Each path transition was completed cleanly within the monitoring window, preventing cascading failures or connection loss. This finding suggests that SD-WAN overlay abstraction is sufficiently robust to tolerate repeated underlay link transitions and that session-level continuity is preserved even under pathological control-plane behavior.
+
+The FRR-based system did not exhibit flapping under any test condition. During the equivalent 20\% packet loss test, traffic transitioned once from the primary to the backup link and did not re-select the primary path during the impairment window. This stable behavior reflects the more conservative nature of distributed routing protocols: BGP typically incorporates hysteresis and dampening mechanisms to prevent oscillation following convergence events. The absence of flapping with FRR could be viewed as either a stability advantage—preventing unnecessary control-plane churn—or a responsiveness disadvantage, if re-evaluation of the degraded path might have been beneficial. Given that both approaches achieved application-level continuity in this scenario, the practical implications of the behavioral difference are minimal.
+
+\section{Conclusion}
+
+This paper investigated whether open-source routing on commodity hardware can replicate SD-WAN failover performance. We compared a Versa Networks SD-WAN appliance against an FRR-based system under identical impairment conditions, motivated by the high cost and vendor lock-in of commercial SD-WAN. Key findings: the SD-WAN achieved zero traffic gaps across all tests, while FRR experienced 12-second interruptions during packet loss events. Both systems maintained sub-1\% request failures and preserved session continuity. We also observed unexpected SD-WAN link flapping under marginal SLA conditions, which did not disrupt service but reveals control-plane vulnerabilities. These results demonstrate that open-source alternatives can achieve acceptable failover performance, though meaningful trade-offs in convergence speed and stability remain.
+
+\subsection{Limitations}
+
+This study evaluates point-to-point failover only and does not test Internet-routed failover or multi-site topologies. We did not replicate advanced commercial features such as FEC or packet replication, which may improve reliability. The comparison includes only a single SD-WAN vendor; broader conclusions would benefit from testing multiple platforms. Additionally, testing was limited to HTTP traffic patterns and did not include latency- or loss-sensitive workloads such as VoIP or video. The 12-second gap observed during FRR packet loss tests remains partially inconclusive regarding root cause; deeper BGP instrumentation would be required to definitively determine whether the delay stems from protocol convergence, monitoring thresholds, or traffic steering logic. Finally, the SD-WAN flapping behavior under marginal SLA conditions, while not disrupting service, suggests control-plane vulnerabilities that warrant deeper investigation. 
+
+\subsection{Further Research}
+
+The most immediate extension of this work would be to broaden the traffic profiles used in testing. Due to time constraints, our evaluation focused on HTTP traffic between two nodes, which does not capture the behavior of latency- and loss-sensitive applications that are common in enterprise environments. Real-time media traffic, such as RTP streams carrying VoIP or video conferencing, would be a particularly valuable addition—measuring jitter, latency, and MOS scores under varying link conditions would reveal meaningful differences between the two solutions that HTTP-based testing cannot surface.
+
+Additionally, our two-node topology left the scalability of each approach untested. Future work should consider two related but distinct questions. The first is a control plane scalability problem: as the number of endpoints grows, manually managing tunnels becomes untenable, and studies could evaluate orchestration approaches such as a centralized controller or a BGP route reflector hierarchy, measuring how management overhead scales in each. The second is a topology question: a hub-and-spoke design is a common deployment choice at scale, and quantifying the latency and throughput penalty it introduces relative to full-mesh would give practitioners concrete data for that architectural decision.
+
+% THIS SECTION WRITES ITSELF - IF YOU HAVE REFERENCES:
+%       1. Ask Claude to put your reference in "BibTeX" format
+%       2. Put the reference at the bottom of the 'refs.bib' file
+%       3. Look at the name given (the first arg. after the parenthesis). That is the reference name
+%       4. in the paper, add the following where you cite your source: ~\cite(ref-name)
+\bibliographystyle{IEEEtran}
+\bibliography{refs}
+
+\end{document}
